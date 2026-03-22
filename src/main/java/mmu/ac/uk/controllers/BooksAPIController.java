@@ -21,200 +21,86 @@ import mmu.ac.uk.database.BookDAO;
 import mmu.ac.uk.helpers.ContentTypeHelper;
 import mmu.ac.uk.models.Book;
 import mmu.ac.uk.models.BookList;
+import mmu.ac.uk.serialisationhandler.FormatHandler;
+import mmu.ac.uk.serialisationhandler.FormatHandlerFactory;
 
-
+/**
+ * REST API servlet for the Books database, linked to /Bookapi.
+ * Supports four HTTP methods:
+ * 1. GET — retrieve all books.
+ * 2. POST — create a new book.
+ * 3. PUT — update an existing book (ID required).
+ * 4. DELETE — delete a book (ID required).
+ * All serialisation and deserialisation delegated to the FormatHandlerFactory.
+ */
 @WebServlet("/Bookapi")
 public class BooksAPIController extends HttpServlet {
 	
-	/**
-	 * 
-	 */
 	private static final long serialVersionUID = 1L;
 
+	/**
+     * GET request - retrieve all books in the format requested by the client.
+     * @param - HTTP request containing Accept header.
+     * @param - HTTP response to write books into.
+     * @throws - ServletException if a servlet error occurs.
+     * @throws - IOException if a response write error occurs.
+     */
 	@Override
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-		
-		//Read the Accept header sent by the client in Bruno. e.g. Accept: application/json, Accept: text/xml....or other
-        String acceptHeader = ContentTypeHelper.normalise(request.getHeader("Accept"));  
         
-        try {        	
-	        BookDAO dao = new BookDAO();
-			ArrayList<Book> allBooks = dao.getAllBooks();
-			
-			switch (acceptHeader) {
-				
-				case "application/json": {
-					response.setContentType("application/json"); // server to client format
-					PrintWriter out = response.getWriter();
-					
-					//Convert Java to json
-					Gson gson = new Gson();
-					String json = gson.toJson(allBooks);
-					out.write(json);
-					out.close();
-					return;
-				}
-				
-				case "application/xml": {
-					response.setContentType("text/xml"); // server to client format
-					PrintWriter out = response.getWriter();
-					
-					try {
-						//JAVA Array List (you get this from the ArrayList<> method to get allBooks -> to XML
-						//Wrap ArrayList inside BookList class (umbrella needed for XML)
-						BookList cl = new BookList(allBooks);
-						StringWriter sw = new StringWriter();
-						
-						//Convert Java -> XML using JAXB
-						JAXBContext context = JAXBContext.newInstance(BookList.class);
-						Marshaller m = context.createMarshaller();
-						m.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE);
-						
-						m.marshal(cl, sw);
-						out.write(sw.toString());
-						
-					} catch (Exception e) {
-						e.printStackTrace();
-		                response.sendError(500, "XML marshalling failed");				
-					}
-					out.close();
-					return;	
-				}
-				
-				case "text/plain": {
-					response.setContentType("text/plain");
-	                PrintWriter out = response.getWriter();
-	
-	                StringBuilder sb = new StringBuilder();
-	                for (Book b : allBooks) {
-	                    sb.append(b.getId()).append("##")
-	                      .append(b.getTitle()).append("##")
-	                      .append(b.getAuthor()).append("##")
-	                      .append(b.getDate()).append("##")
-	                      .append(b.getGenres()).append("##")
-	                      .append(b.getCharacters()).append("##")
-	                      .append(b.getSynopsis()).append("\n");
-	                }
-	
-	                out.write(sb.toString());
-	                out.close();
-	                return;
-				}
-				
-				default:
-	             // Unsupported Accept header
-	        	    response.sendError(406, "Not Acceptable: Supported types: JSON, XML, TEXT");
-			}
+        // Accept header is passed directly from the client (i.e Bruno) to the factory, which is then obtained here.
+        FormatHandler handler = FormatHandlerFactory.getHandler(request.getHeader("Accept"));
+        
+        // If null or unsupported Accept header returned from factory, send error.
+        if (handler == null) {
+    	    response.sendError(406, "Not Acceptable: Supported types: JSON, XML, TEXT");
+            return;
+        }
+ 
+        try {
+            BookDAO dao = new BookDAO();
+            ArrayList<Book> allBooks = dao.getAllBooks();
+ 
+            // No need for switch statement as handler encapsulates all format-specific serialisation logic.
+            response.setContentType(handler.getResponseContentType()); // server to client format
+            PrintWriter out = response.getWriter();
+            out.write(handler.serialise(allBooks));
+            out.close();
+ 
         } catch (Exception e) {
-        	e.printStackTrace();
-        	response.sendError(500, "Server error processing GET all books request");
-        	}
+            e.printStackTrace();
+            response.sendError(500, "Server error processing GET all books request");
+        }
+        
 	}
-		
-//		// Default to JSON if no Accept header is provided
-//	    if (acceptHeader == null) {
-//	        acceptHeader = "application/json";
-//	    }
-//		
-//		//If Accept header contains "application/json" return json.
-//		if (acceptHeader != null && acceptHeader.contains("application/json")) {
-//			response.setContentType("application/json"); // server to client format
-//			PrintWriter out = response.getWriter();
-//			
-//			//Convert Java to json
-//			Gson gson = new Gson();
-//			String json = gson.toJson(allBooks);
-//			out.write(json);
-//			out.close();
-//			return;
-//		}
-//		//If Accept header contains "text/xml" return XML.
-//		if (acceptHeader != null && (acceptHeader.contains("application/xml") || acceptHeader.contains("text/xml"))) {
-//			response.setContentType("text/xml"); // server to client format
-//			PrintWriter out = response.getWriter();
-//			
-//			try {
-//				//JAVA Array List (you get this from the ArrayList<> method to get allBooks -> to XML
-//				//Wrap ArrayList inside BookList class (umbrella needed for XML)
-//				BookList cl = new BookList(allBooks);
-//				StringWriter sw = new StringWriter();
-//				
-//				//Convert Java -> XML using JAXB
-//				JAXBContext context = JAXBContext.newInstance(BookList.class);
-//				Marshaller m = context.createMarshaller();
-//				m.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE);
-//				
-//				m.marshal(cl, sw);
-//				out.write(sw.toString());
-//				
-//			} catch (Exception e) {
-//				e.printStackTrace();
-//                response.sendError(500, "XML marshalling failed");				
-//			}
-//			out.close();
-//			return;
-//		}
-//		
-//		// Unsupported Accept header
-//	    response.sendError(406, "Not Acceptable: Supported types are application/json and text/xml AND some weird shit");
-//
-//	}
 	
+	/**
+	 * POST request - create / add a new book.
+     * @param - HTTP request containing the Content-Type header and serialised book in the body.
+     * @param - HTTP response.
+     * @throws - ServletException if a servlet error occurs.
+     * @throws - IOException if a response write error occurs.
+     */
 	@Override
 	protected void doPost(HttpServletRequest request, HttpServletResponse response)	throws ServletException, IOException {
-		// Read input format: Content-Type header - highlights the format the client sent data in
-	    String contentType = ContentTypeHelper.normalise(request.getHeader("Content-Type"));
+		
+		// Content Type is passed directly from the client (i.e Bruno) to the factory, which is then obtained here.
+        FormatHandler handler = FormatHandlerFactory.getHandler(request.getHeader("Content-Type"));
+		
+        // If null or unsupported Content Type returned from factory, send error.
+        if (handler == null) {
+            response.sendError(415, "Unsupported Content-Type. Supported types: JSON, XML, TEXT");
+            return;
+        }
+        
 	    // Read the entire request body as raw text and concatenates it
 	    String body = request.getReader().lines().reduce("", (acc, line) -> acc + line);
 
 	    try {
-	    	Book newBook = null;
-		    
-		    switch (contentType) {
-		    
-			    case "application/json": {
-			    	 Gson gson = new Gson();
-			         newBook = gson.fromJson(body, Book.class);
-			         break;
-			    }
-			    
-			    case "application/xml": {
-			    	try {
-			    		JAXBContext context = JAXBContext.newInstance(Book.class);
-			    	    Unmarshaller unmarshaller = context.createUnmarshaller();
-			    	    newBook = (Book) unmarshaller.unmarshal(new StringReader(body));
-			    	} catch (Exception e) {
-			    		response.sendError(400, "Invalid XML");
-	                    return;
-			    	}
-		            break;
-			    }
-			    
-			    case "text/plain": {
-			    	String[] p = body.split("##");
-			        if (p.length < 6) {
-			            response.sendError(400, "Expected: title##author##date##genres##characters##synopsis");
-			            return;
-			        }
-
-			        newBook = new Book();
-			        newBook.setTitle(p[0].trim());
-			        newBook.setAuthor(p[1].trim());
-			        newBook.setDate(p[2].trim());
-			        newBook.setGenres(p[3].trim());
-			        newBook.setCharacters(p[4].trim());
-			        newBook.setSynopsis(p[5].trim());
-			        break;
-			    }
-			    
-			    default:
-			    	// Deal with an unsupported format
-			        response.sendError(415, "Unsupported Content-Type");
-			        return;
-		    }
+	    	Book newBook = handler.deserialise(body);
 	        // Insert into DB
 	        BookDAO dao = new BookDAO();
-	        dao.insertBook(newBook); //sanitised and validated in DAO
+	        dao.insertBook(newBook);
 
 	        // Return 201 for new Book created
 	        response.setStatus(201);
@@ -225,95 +111,45 @@ public class BooksAPIController extends HttpServlet {
 	        out.write("{\"status\":\"created\"}");
 	        out.close();
 
+	    } catch (IllegalArgumentException e) {
+            response.sendError(400, e.getMessage());
 	    } catch (Exception e) {
 	        e.printStackTrace();
 	        response.sendError(500, "Error processing Add Book POST request");
 	    }
 	}	    
 	    
-//	    try {
-//	        // If Content Type JSON input
-//	        if (contentType != null && contentType.contains("application/json")) {
-//
-//	            Gson gson = new Gson();
-//	            newBook = gson.fromJson(body, Book.class);
-//	        }
-//
-//	        // If Content Type XML input
-//	        else if (contentType != null && (contentType.contains("application/xml") || contentType.contains("text/xml"))) {
-//
-//	            JAXBContext context = JAXBContext.newInstance(Book.class);
-//	            Unmarshaller unmarshaller = context.createUnmarshaller();
-//	            newBook = (Book) unmarshaller.unmarshal(new StringReader(body));
-//	        }
-//
-//	        // Deal with an unsupported format
-//	        else {
-//	            response.sendError(415, "Unsupported Content-Type");
-//	            return;
-//	        }
-
-
-	
+    /**
+     * PUT request - update an existing book. The book ID must be present in the body to identify the book to update.
+     * @param - HTTP request containing the Content-Type header and serialised book (with ID) in the body.
+     * @param - HTTP response.
+     * @throws - ServletException if a servlet error occurs.
+     * @throws - IOException if a response write error occurs.
+     */
 	@Override
 	protected void doPut(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-		// Read input format: Content-Type header - highlights the format the client sent data in
-		String contentType = ContentTypeHelper.normalise(request.getHeader("Content-Type"));
-	    // Read the request body
+		
+		// Content Type is passed directly from the client (i.e Bruno) to the factory, which is then obtained here.
+        FormatHandler handler = FormatHandlerFactory.getHandler(request.getHeader("Content-Type"));
+		
+        // If null or unsupported Content Type returned from factory, send error.
+        if (handler == null) {
+            response.sendError(415, "Unsupported Content-Type. Supported types: JSON, XML, TEXT");
+            return;
+        }
+        
+	    // Read the entire request body as raw text and concatenates it
 	    String body = request.getReader().lines().reduce("", (acc, line) -> acc + line);
 
 	    try {
-		    Book updateBook = null;
-		    
-		    switch (contentType) {
-		    
-			    case "application/json": {
-			    	Gson gson = new Gson();
-		            updateBook = gson.fromJson(body, Book.class);
-		            break;
-			    }
-			    
-			    case "application/xml": {
-			    	try{
-			    		JAXBContext context = JAXBContext.newInstance(Book.class);
-			    		Unmarshaller unmarshaller = context.createUnmarshaller();
-				        updateBook = (Book) unmarshaller.unmarshal(new StringReader(body));
-			    	} catch (Exception e) {
-			    		response.sendError(400, "Invalid XML");
-			            return;
-			    	}
-			    	break;		           
-			    }
-			    
-			    case "text/plain": {
-			    	String[] p = body.split("##");
-                    if (p.length < 7) {
-                        response.sendError(400, "Expected: id##title##author##date##genres##characters##synopsis");
-                        return;
-                    }
+	    	Book updateBook = handler.deserialise(body);
 
-                    updateBook = new Book();
-                    updateBook.setId(Integer.parseInt(p[0].trim()));
-                    updateBook.setTitle(p[1].trim());
-                    updateBook.setAuthor(p[2].trim());
-                    updateBook.setDate(p[3].trim());
-                    updateBook.setGenres(p[4].trim());
-                    updateBook.setCharacters(p[5].trim());
-                    updateBook.setSynopsis(p[6].trim());
-                    break;
-			    }
-			    
-			    default:
-			    	response.sendError(415, "Unsupported Content-Type");
-		            return;
-		    }
-		    
-		    // ID is required AND must exist in the database for update to be allowed. The latter dealt with below.
+	    	// ID is required AND must exist in the database for update to be allowed. The latter dealt with below.
 	        if (updateBook.getId() <= 0) {
 	            response.sendError(400, "Book ID is required for PUT update");
 	            return;
 	        }
-
+	        
 	        //Perform action and Update book entry in DB.
 	        BookDAO dao = new BookDAO();
 	        int rows = dao.updateBook(updateBook);
@@ -334,107 +170,39 @@ public class BooksAPIController extends HttpServlet {
 	        out.write("{\"status\":\"book updated\"}");
 	        out.close();
 
-	    } catch (Exception e) {
-	        e.printStackTrace();
-	        response.sendError(500, "Error processing PUT request.");
+		    } catch (IllegalArgumentException e) {
+	            response.sendError(400, e.getMessage());
+	            } catch (Exception e) {
+	            	e.printStackTrace();
+	            	response.sendError(500, "Error processing PUT request.");
+	            	}
 	    }
-	    }
-
-//	    try {
-//	        // JSON input
-//	        if (contentType != null && contentType.contains("application/json")) {
-//
-//	            Gson gson = new Gson();
-//	            updateBook = gson.fromJson(body, Book.class);
-//	        }
-//	        // XML input
-//	        else if (contentType != null && (contentType.contains("application/xml") || contentType.contains("text/xml"))) {
-//
-//	            JAXBContext context = JAXBContext.newInstance(Book.class);
-//	            Unmarshaller unmarshaller = context.createUnmarshaller();
-//	            updateBook = (Book) unmarshaller.unmarshal(new StringReader(body));
-//	        }
-//	        // Deal with any unsupported input type
-//	        else {
-//	            response.sendError(415, "Unsupported Content-Type");
-//	            return;
-//	        }
-//
-//	        // ID is required AND must exist in the database for update to be allowed. The latter dealt with below.
-//	        if (updateBook.getId() == 0) {
-//	            response.sendError(400, "Book ID is required for PUT update");
-//	            return;
-//	        }
-//
-//	        //Perform action and Update book entry in DB.
-//	        BookDAO dao = new BookDAO();
-//	        int rows = dao.updateBook(updateBook);
-//	        // rows = 1 → updated
-//	        // rows = 0 → ID not found
-//	        
-//	        // Handle book not found
-//	        if(rows == 0) {
-//	        	response.sendError(404,  "Book ID does not exist");
-//	        	return;
-//	        }
-//	        // Return 200 for Book updated, or send error
-//	        response.setStatus(200);
-//	        response.setContentType("application/json");
-//
-//	        // Optional confirmation body
-//	        PrintWriter out = response.getWriter();
-//	        out.write("{\"status\":\"book updated\"}");
-//	        out.close();
-//
-//	    } catch (Exception e) {
-//	        e.printStackTrace();
-//	        response.sendError(500, "Error processing PUT request.");
-//	    }
-//	}
 	
+    /**
+     * DELETE request - deletes an existing book. The book ID must be present in the body to identify the book to delete.
+     * @param - HTTP request containing the Content-Type header and book ID in the body.
+     * @param - HTTP response.
+     * @throws - ServletException if a servlet error occurs.
+     * @throws - IOException if a response write error occurs.
+     */
 	@Override
 	protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-		// Read input format: Content-Type header - highlights the format the client sent data in
-		String contentType = ContentTypeHelper.normalise(request.getHeader("Content-Type"));
+		
+		// Content Type is passed directly from the client (i.e Bruno) to the factory, which is then obtained here.
+        FormatHandler handler = FormatHandlerFactory.getHandler(request.getHeader("Content-Type"));
+		
+        // If null or unsupported Content Type returned from factory, send error.
+        if (handler == null) {
+            response.sendError(415, "Unsupported Content-Type. Supported types: JSON, XML, TEXT");
+            return;
+        }
+		
+	    // Read the entire request body as raw text and concatenates it
 	    String body = request.getReader().lines().reduce("", (acc, line) -> acc + line);
 
 	    try {
-	    	int idToDelete = 0;
-	    	
-	    	switch (contentType) {
-	    	
-		    	case "application/json": {
-		    		Gson gson = new Gson();
-		        	Book toDelete = gson.fromJson(body, Book.class);
-	
-		            idToDelete = toDelete.getId();
-		            break;
-		    	}
-		    	
-		    	case "application/xml": {
-		    		try {
-		    			JAXBContext context = JAXBContext.newInstance(Book.class);
-			            Unmarshaller unmarshaller = context.createUnmarshaller();
-			            Book b = (Book) unmarshaller.unmarshal(new StringReader(body));
-			            idToDelete = b.getId();
-		    		} catch (Exception e) {
-		    			response.sendError(400, "Invalid XML");
-                        return;
-		    		}
-		    		break;
-		    	}
-		    	
-		    	case "text/plain": {
-		    		String[] p = body.split("##");
-                    idToDelete = Integer.parseInt(p[0].trim());
-                    break;
-		    	}
-		    	
-		    	default:
-		    		 // Deal with Unsupported input
-			        response.sendError(415, "Unsupported Content-Type for DELETE");
-			        return;
-	    	}
+	    	Book parsed = handler.deserialise(body);
+	    	int idToDelete = parsed.getId();
 	    	
 	    	// Validate ID
 	        if (idToDelete <= 0) {
@@ -444,11 +212,7 @@ public class BooksAPIController extends HttpServlet {
 	        
 	        // Delete using DAO
 	        BookDAO dao = new BookDAO();
-	        Book b = new Book();
-	        //DAO requires a Book object, not an int
-	        b.setId(idToDelete);
-	        
-	        int rows = dao.deleteBook(b);  
+	        int rows = dao.deleteBook(parsed);  
 	        // rows = 1 → deleted
 	        // rows = 0 → ID not found
 
@@ -466,70 +230,12 @@ public class BooksAPIController extends HttpServlet {
 	        out.write("{\"status\":\"book deleted\"}");
 	        out.close();
 
+	    } catch (IllegalArgumentException e) {
+            response.sendError(400, e.getMessage());
 	    } catch (Exception e) {
-	        e.printStackTrace();
+	    	e.printStackTrace();
 	        response.sendError(500, "Error processing DELETE request");
-	    }	    	
 	    }
-}
-	    
-//	    
-//
-//	    try {
-//	        // JSON input
-//	        if (contentType != null && contentType.contains("application/json")) {
-//
-//	        	Gson gson = new Gson();
-//	        	Book toDelete = gson.fromJson(body, Book.class);
-//
-//	            idToDelete = toDelete.getId();
-//	        }
-//	        // XML input
-//	        else if (contentType != null && (contentType.contains("application/xml") || contentType.contains("text/xml"))) {
-//
-//	            JAXBContext context = JAXBContext.newInstance(Book.class);
-//	            Unmarshaller unmarshaller = context.createUnmarshaller();
-//	            Book b = (Book) unmarshaller.unmarshal(new StringReader(body));
-//	            idToDelete = b.getId();
-//	        }
-//	        // Deal with Unsupported input
-//	        else {
-//	            response.sendError(415, "Unsupported Content-Type for DELETE");
-//	            return;
-//	        }
-//
-//	        // Validate ID
-//	        if (idToDelete == 0) {
-//	            response.sendError(400, "Book ID is required to delete book");
-//	            return;
-//	        }
-//	        
-//	        // Delete using DAO
-//	        BookDAO dao = new BookDAO();
-//	        Book b = new Book();
-//	        //DAO requires a Book object, not an int
-//	        b.setId(idToDelete);
-//	        
-//	        int rows = dao.deleteBook(b);  
-//	        // rows = 1 → deleted
-//	        // rows = 0 → ID not found
-//
-//	        if (rows == 0) {
-//	            response.sendError(404, "Book ID does not exist");
-//	            return;
-//	        }
-//
-//	        // Status 200 OK - book deleted
-//	        response.setStatus(200);
-//	        response.setContentType("application/json");
-//
-//	        // Optional confirmation body
-//	        PrintWriter out = response.getWriter();
-//	        out.write("{\"status\":\"book deleted\"}");
-//	        out.close();
-//
-//	    } catch (Exception e) {
-//	        e.printStackTrace();
-//	        response.sendError(500, "Error processing DELETE request");
-//	    }
-//	}
+	    }
+	}
+
