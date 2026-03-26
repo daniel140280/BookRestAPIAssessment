@@ -2,9 +2,8 @@ package mmu.ac.uk.controllers;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.io.StringReader;
-import java.io.StringWriter;
 import java.util.ArrayList;
+import java.util.List;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -12,15 +11,8 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.google.gson.Gson;
-
-import jakarta.xml.bind.JAXBContext;
-import jakarta.xml.bind.Marshaller;
-import jakarta.xml.bind.Unmarshaller;
 import mmu.ac.uk.database.BookDAO;
-import mmu.ac.uk.helpers.ContentTypeHelper;
 import mmu.ac.uk.models.Book;
-import mmu.ac.uk.models.BookList;
 import mmu.ac.uk.serialisationhandler.FormatHandler;
 import mmu.ac.uk.serialisationhandler.FormatHandlerFactory;
 
@@ -39,7 +31,7 @@ public class BooksAPIController extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
 	/**
-     * GET request - retrieve all books in the format requested by the client.
+     * GET request - retrieve all books in the format requested by the client, or Search and return books if query provided.
      * @param - HTTP request containing Accept header.
      * @param - HTTP response to write books into.
      * @throws - ServletException if a servlet error occurs.
@@ -56,22 +48,53 @@ public class BooksAPIController extends HttpServlet {
     	    response.sendError(406, "Not Acceptable: Supported types: JSON, XML, TEXT");
             return;
         }
+        
+        //Search declaration
+        String query = request.getParameter("q");
  
         try {
             BookDAO dao = new BookDAO();
-            ArrayList<Book> allBooks = dao.getAllBooks();
- 
-            // No need for switch statement as handler encapsulates all format-specific serialisation logic.
-            response.setContentType(handler.getResponseContentType()); // server to client format
-            PrintWriter out = response.getWriter();
-            out.write(handler.serialise(allBooks));
-            out.close();
- 
+            
+            if (query != null && !query.trim().isEmpty()) {
+
+                // Optional pagination parameters are read to improve UI rendering.
+                int page = 1;
+                int recordsPerPage = 50;
+
+                if (request.getParameter("page") != null) {
+                    page = Integer.parseInt(request.getParameter("page"));
+                }
+                if (request.getParameter("limit") != null) {
+                    recordsPerPage = Integer.parseInt(request.getParameter("limit"));
+                }
+
+                List<Book> results = dao.searchBooksPaginated(
+                    query,
+                    (page - 1) * recordsPerPage,
+                    recordsPerPage
+                );
+
+                response.setContentType(handler.getResponseContentType());
+                PrintWriter out = response.getWriter();
+                out.write(handler.serialise(new ArrayList<>(results)));
+                out.close();
+
+            } else { 
+            	// Get all Books function.
+	            ArrayList<Book> allBooks = dao.getAllBooks();
+	 
+	            // No need for switch statement as handler encapsulates all format-specific serialisation logic.
+	            response.setContentType(handler.getResponseContentType()); // server to client format
+	            PrintWriter out = response.getWriter();
+	            out.write(handler.serialise(allBooks));
+	            out.close();
+            }
+        } catch (NumberFormatException e) {
+            response.sendError(400, "Invalid pagination parameter");
         } catch (Exception e) {
             e.printStackTrace();
             response.sendError(500, "Server error processing GET all books request");
-        }
-        
+        }  
 	}
 	
 	/**
