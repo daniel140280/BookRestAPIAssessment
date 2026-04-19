@@ -16,6 +16,16 @@ import javax.servlet.http.HttpServletResponse;
  * CORS filter that allows the Vite dev server (localhost:5173) to call
  * the REST API (localhost:8080) during local development.
  */
+
+/**
+ * The Cross-Origin Resource Sharing (CORS) servlet filter enables the front-end development server.
+ * Put simply, this filter allows the Vite dev server running on http://localhost:5173 to access
+ * the REST API running on http://localhost:8080. 
+ * The browsers then enforce Same-Origin Policy that blocks cross-origin requests unless the server explicitly permits them.
+ *
+ * This filter is intended for development use only. In production, CORS rules should be restricted to trusted origins.
+ */
+
 @WebFilter("/*")
 public class CorsFilter implements Filter {
 
@@ -44,5 +54,7 @@ public class CorsFilter implements Filter {
     }
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+    	
+    }
 }
